@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hệ Thống Kiểm Tra Trực Tuyến - Toán 10</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- KaTeX for Math Rendering -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+</head>
+<body>
+  <!-- Top Navigation -->
+  <header class="top-navbar">
+    <div></div>
+    <div class="nav-actions">
+      <button id="btnStudentPortal" class="btn btn-outline-light active" onclick="switchPortal('student')">
+        📝 Cổng Học Sinh
+      </button>
+      <button id="btnTeacherPortal" class="btn btn-outline-light" onclick="switchPortal('teacher')">
+        🔒 Cổng Giáo Viên (Xem Điểm)
+      </button>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- ==================== 1. CỔNG HỌC SINH ==================== -->
+    <section id="studentPortal">
+      <!-- 1A. Màn hình nhập thông tin bắt đầu làm bài -->
+      <div id="studentStartScreen" class="card start-screen">
+        <div class="exam-banner">
+          <h2 id="examTitleBanner">ĐỀ KIỂM TRA GIỮA HỌC KÌ 1 LỚP 10 - ĐỀ SỐ 01</h2>
+          <div class="exam-meta">
+            <span>⏱ Thời gian: <strong id="examDurationDisplay">90</strong> phút</span>
+            <span>📋 Cấu trúc: 4 Phần (22 câu)</span>
+            <span>🔐 Chế độ: Ẩn điểm sau khi nộp</span>
+          </div>
+        </div>
+
+        <div class="notice-box">
+          <strong>Lưu ý dành cho thí sinh:</strong>
+          <ul style="margin-left: 1.2rem; margin-top: 0.35rem;">
+            <li>Điền đầy đủ <strong>Họ và tên</strong>, <strong>Lớp</strong> và <strong>Số báo danh</strong> trước khi bắt đầu.</li>
+            <li>Sau khi bấm <strong>Nộp bài</strong>, bài làm sẽ được gửi trực tiếp về hệ thống của Giáo viên. <strong>Học sinh không xem được điểm và đáp án sau khi nộp.</strong></li>
+          </ul>
+        </div>
+
+        <form id="startExamForm" onsubmit="startExam(event)">
+          <div class="form-group">
+            <label for="stName">Họ và tên học sinh <span style="color:red">*</span></label>
+            <input type="text" id="stName" class="form-control" placeholder="Ví dụ: Nguyễn Văn An" required />
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+              <label for="stClass">Lớp <span style="color:red">*</span></label>
+              <input type="text" id="stClass" class="form-control" placeholder="Ví dụ: 10A1" required />
+            </div>
+            <div class="form-group">
+              <label for="stCode">Số báo danh / Mã HS</label>
+              <input type="text" id="stCode" class="form-control" placeholder="Ví dụ: HS01" />
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.85rem; font-size: 1.05rem;">
+            🚀 Bắt Đầu Làm Bài
+          </button>
+        </form>
+      </div>
+
+      <!-- 1B. Màn hình đang làm bài thi -->
+      <div id="studentExamScreen" class="exam-layout hidden">
+        <div id="examQuestionsContainer"></div>
+
+        <!-- Cột bên phải: Đồng hồ & bảng câu hỏi -->
+        <aside class="exam-sidebar">
+          <div class="card" style="padding: 1.15rem;">
+            <div class="timer-box">
+              <div class="timer-label">Thời gian còn lại</div>
+              <div id="timerDisplay" class="timer-value">90:00</div>
+            </div>
+
+            <div class="student-info-bar">
+              <div>👤 Thí sinh: <strong id="displayStName"></strong></div>
+              <div>🏫 Lớp: <strong id="displayStClass"></strong> | SBD: <strong id="displayStCode"></strong></div>
+            </div>
+
+            <div style="font-weight: 700; font-size: 0.88rem; margin-bottom: 0.5rem; color: #334155;">
+              Danh sách câu hỏi (<span id="answeredCount">0</span>/22)
+            </div>
+            <div id="questionNavGrid" class="q-nav-grid"></div>
+
+            <button type="button" class="btn btn-success" style="width: 100%; justify-content: center; padding: 0.8rem; font-size: 1rem;" onclick="confirmSubmitExam()">
+              ✅ Nộp Bài Thi
+            </button>
+          </div>
+        </aside>
+      </div>
+
+      <!-- 1C. Màn hình sau khi nộp bài (KHÔNG HIỂN THỊ ĐIỂM CHO HỌC SINH) -->
+      <div id="studentSubmittedScreen" class="card submitted-card hidden">
+        <div class="check-icon">✓</div>
+        <h2 style="color: #0f3f7a; margin-bottom: 0.5rem;">Đã Nộp Bài Thành Công!</h2>
+        <p style="color: #475569; margin-bottom: 1.25rem;">
+          Cảm ơn em <strong id="subStName"></strong> (<span id="subStClass"></span>) đã hoàn thành bài kiểm tra.
+        </p>
+        <div style="background: #f1f5f9; padding: 1.15rem; border-radius: 10px; text-align: left; font-size: 0.92rem; margin-bottom: 1.25rem;">
+          <div>📅 <strong>Thời điểm nộp bài:</strong> <span id="subTime"></span></div>
+          <div>⏱ <strong>Thời gian làm bài:</strong> <span id="subDuration"></span></div>
+          <div>📌 <strong>Trạng thái:</strong> <span id="subSyncStatus" style="color: #15803d; font-weight: 700;">Đã ghi nhận bài làm</span></div>
+          <div style="margin-top: 0.5rem; color: #64748b; font-style: italic;">
+            * Theo quy định của Giáo viên, điểm số và đáp án được bảo mật và chỉ Giáo viên mới có quyền xem.
+          </div>
+        </div>
+
+        <!-- Khung Mã Nộp Bài Mã Hóa (Dùng khi học sinh làm trên máy khác mà không qua máy chủ) -->
+        <div style="background: #eff6ff; border: 1.5px dashed #3b82f6; padding: 1rem; border-radius: 10px; text-align: left; margin-bottom: 1.5rem;">
+          <div style="font-weight: 700; color: #1e3a8a; margin-bottom: 0.35rem; font-size: 0.92rem;">
+            🔐 Mã Xác Nhận Nộp Bài (Đã mã hóa bảo mật điểm):
+          </div>
+          <p style="font-size: 0.84rem; color: #475569; margin-bottom: 0.6rem;">
+            Nếu em làm bài từ máy cá nhân ở nhà, hãy bấm <strong>"Sao chép Mã Nộp Bài"</strong> hoặc <strong>"Tải Phiếu Nộp Bài"</strong> bên dưới và gửi cho Giáo viên:
+          </p>
+          <textarea id="encryptedSubmissionToken" class="form-control" rows="2" readonly style="font-family: monospace; font-size: 0.78rem; background: #fff; margin-bottom: 0.6rem;"></textarea>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" class="btn btn-primary" onclick="copySubmissionToken()">
+              📋 Sao chép Mã Nộp Bài
+            </button>
+            <button type="button" class="btn btn-success" onclick="downloadStudentReceiptFile()">
+              ⬇️ Tải Phiếu Nộp Bài (.txt)
+            </button>
+          </div>
+        </div>
+
+        <button class="btn btn-secondary" onclick="resetForNewStudent()">
+          🔄 Quay về trang chủ (Dành cho lượt thi tiếp theo)
+        </button>
+      </div>
+    </section>
+
+    <!-- ==================== 2. CỔNG GIÁO VIÊN ==================== -->
+    <section id="teacherPortal" class="hidden">
+      <!-- 2A. Màn hình đăng nhập Giáo viên -->
+      <div id="teacherLoginScreen" class="card start-screen" style="max-width: 460px;">
+        <div style="text-align: center; margin-bottom: 1.25rem;">
+          <div style="font-size: 2.5rem; margin-bottom: 0.3rem;">🔐</div>
+          <h2 style="color: var(--primary-dark);">Đăng Nhập Giáo Viên</h2>
+          <p style="color: var(--text-muted); font-size: 0.9rem;">
+            Chỉ giáo viên có mật khẩu mới xem được điểm, bài làm của học sinh và đáp án chi tiết.
+          </p>
+        </div>
+        <form onsubmit="loginTeacher(event)">
+          <div class="form-group">
+            <label for="teacherPassInput">Mật khẩu Giáo viên</label>
+            <input type="password" id="teacherPassInput" class="form-control" placeholder="Nhập mật khẩu giáo viên..." required />
+          </div>
+          <div id="loginErrorMsg" style="color: var(--danger); font-size: 0.88rem; margin-bottom: 0.8rem;" class="hidden">
+            ❌ Mật khẩu không chính xác! Vui lòng thử lại.
+          </div>
+          <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.75rem;">
+            Đăng Nhập Quản Trị
+          </button>
+        </form>
+      </div>
+
+      <!-- 2B. Bảng điều khiển của Giáo viên -->
+      <div id="teacherDashboard" class="hidden">
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem;">
+            <div>
+              <h2 style="color: var(--primary-dark);">👨‍🏫 Quản Trị Kết Quả & Đề Thi (Dành Riêng Cho Giáo Viên)</h2>
+              <p style="font-size: 0.9rem; color: var(--text-muted);">
+                Học sinh làm bài xong hoàn toàn không biết điểm. Toàn bộ điểm số và lời giải chi tiết được quản lý tại đây.
+              </p>
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button class="btn btn-success" onclick="exportCSV()">📊 Xuất Điểm Excel (CSV)</button>
+              <button class="btn btn-secondary" onclick="logoutTeacher()">Đăng xuất</button>
+            </div>
+          </div>
+
+          <div class="teacher-tabs">
+            <button id="tabBtnSubmissions" class="tab-btn active" onclick="switchTeacherTab('submissions')">
+              📋 Danh Sách Điểm Học Sinh (<span id="totalSubmissionsBadge">0</span>)
+            </button>
+            <button id="tabBtnSolutions" class="tab-btn" onclick="switchTeacherTab('solutions')">
+              📖 Đáp Án & Giải Chi Tiết Đề 01
+            </button>
+            <button id="tabBtnManage" class="tab-btn" onclick="switchTeacherTab('manage')">
+              ⚙️ Cài Đặt & Quản Lý Đề Thi
+            </button>
+          </div>
+
+          <!-- TAB 1: DANH SÁCH BÀI NỘP & ĐIỂM SỐ -->
+          <div id="teacherTabSubmissions">
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="label">Tổng số bài đã nộp</div>
+                <div id="statCount" class="value">0</div>
+              </div>
+              <div class="stat-card">
+                <div class="label">Điểm trung bình</div>
+                <div id="statAvg" class="value">0.00</div>
+              </div>
+              <div class="stat-card">
+                <div class="label">Điểm cao nhất</div>
+                <div id="statMax" class="value">0.00</div>
+              </div>
+              <div class="stat-card">
+                <div class="label">Điểm thấp nhất</div>
+                <div id="statMin" class="value">0.00</div>
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
+              <input type="text" id="searchStudentInput" class="form-control" style="max-width: 300px;" placeholder="🔍 Tìm theo tên hoặc lớp..." oninput="renderSubmissionsTable()" />
+              <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <button class="btn btn-primary" onclick="openImportTokenModal()">📥 Nhập Mã/Phiếu Nộp Bài (Từ máy HS)</button>
+                <button class="btn btn-secondary" onclick="refreshSubmissions()">🔄 Làm mới Đám mây</button>
+                <button class="btn btn-danger" onclick="clearAllSubmissions()">🗑 Xóa tất cả</button>
+              </div>
+            </div>
+
+            <div style="overflow-x: auto;">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>STT</th>
+                    <th>Họ và tên</th>
+                    <th>Lớp</th>
+                    <th>SBD</th>
+                    <th>Phần I (3,0đ)</th>
+                    <th>Phần II (4,0đ)</th>
+                    <th>Phần III (2,0đ)</th>
+                    <th>Phần IV (1,0đ)</th>
+                    <th>Tổng Điểm (10đ)</th>
+                    <th>Thời gian nộp</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="submissionsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- TAB 2: ĐÁP ÁN & LỜI GIẢI CHI TIẾT -->
+          <div id="teacherTabSolutions" class="hidden">
+            <div class="notice-box" style="background: #eff6ff; border-left-color: var(--primary); color: #1e3a8a;">
+              <strong>Bảng Đáp Án Chuẩn & Lời Giải Chi Tiết:</strong> Đề Kiểm Tra Giữa Học Kì 1 Lớp 10 - Đề Số 01 (Map Study). Chỉ hiển thị trong tài khoản Giáo viên.
+            </div>
+            <div id="fullSolutionsContainer"></div>
+          </div>
+
+          <!-- TAB 3: CÀI ĐẶT & QUẢN LÝ ĐỀ THI -->
+          <div id="teacherTabManage" class="hidden">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
+              <div class="card" style="margin-bottom: 0;">
+                <h3 style="margin-bottom: 0.85rem; color: var(--primary-dark);">🔑 Cài Đặt Bảo Mật & Phòng Thi Đám Mây</h3>
+                <div class="form-group">
+                  <label>Thời gian làm bài (phút)</label>
+                  <input type="number" id="settingDuration" class="form-control" value="90" min="5" max="300" />
+                </div>
+                <div class="form-group">
+                  <label>Mã Phòng Thi Trực Tuyến (Cloud Room ID)</label>
+                  <input type="text" id="settingCloudRoom" class="form-control" placeholder="Ví dụ: TOAN10-GV-BAO" />
+                  <small style="color: var(--text-muted); font-size: 0.8rem;">Học sinh ở máy khác có Internet sẽ tự động gửi bài về mã phòng này.</small>
+                </div>
+                <div class="form-group">
+                  <label>Đổi mật khẩu Giáo viên mới</label>
+                  <input type="password" id="settingNewPass" class="form-control" placeholder="Để trống nếu giữ nguyên mật khẩu hiện tại" />
+                </div>
+                <button class="btn btn-primary" onclick="saveSettings()">💾 Lưu Cài Đặt</button>
+              </div>
+
+              <div class="card" style="margin-bottom: 0;">
+                <h3 style="margin-bottom: 0.85rem; color: var(--primary-dark);">🌐 Xuất File Độc Lập Gửi Cho Học Sinh</h3>
+                <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 0.85rem;">
+                  Tải xuống <strong>1 file HTML duy nhất</strong> đã tích hợp sẵn đề thi & cấu hình của thầy/cô để gửi qua <strong>Zalo, Messenger, Google Classroom</strong> cho học sinh mở trên mọi máy tính/điện thoại mà không cần máy chủ.
+                </p>
+                <div style="display: flex; gap: 0.65rem; flex-wrap: wrap; margin-bottom: 1rem;">
+                  <button class="btn btn-success" onclick="exportStandaloneStudentFile()">📦 Tải File Đề Thi Độc Lập (.html)</button>
+                </div>
+                <hr style="border:none; border-top:1px solid #e2e8f0; margin: 0.85rem 0;" />
+                <div style="display: flex; gap: 0.65rem; flex-wrap: wrap;">
+                  <button class="btn btn-primary" onclick="exportBackupJSON()">⬇️ Sao lưu điểm (.json)</button>
+                  <label class="btn btn-secondary" style="cursor: pointer;">
+                    ⬆️ Nhập sao lưu (.json)
+                    <input type="file" accept=".json" style="display: none;" onchange="importBackupJSON(event)" />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Trình chỉnh sửa / Thêm đề PDF hoặc câu hỏi -->
+            <div class="card" style="margin-top: 1.5rem; margin-bottom: 0;">
+              <h3 style="margin-bottom: 0.6rem; color: var(--primary-dark);">📄 Đính Kèm Thêm File Đề Thi PDF / Ảnh (Tùy chọn)</h3>
+              <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 0.85rem;">
+                Ngoài bộ câu hỏi tương tác đã được số hóa sẵn từ Đề số 01, Giáo viên có thể đính kèm thêm file PDF hoặc ảnh đề thi để hiển thị song song cho học sinh nếu muốn.
+              </p>
+              <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                <input type="file" id="pdfUploadInput" accept=".pdf,image/*" class="form-control" style="max-width: 380px;" onchange="handleUploadExamFile(event)" />
+                <button class="btn btn-danger" onclick="removeUploadedExamFile()">Xóa file đính kèm</button>
+              </div>
+              <div id="uploadedFileStatus" style="margin-top: 0.6rem; font-size: 0.88rem; color: #15803d;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal Xem Chi Tiết Bài Làm Của Học Sinh & Chấm Tự Luận -->
+  <div id="detailModal" class="modal-backdrop hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalStudentTitle" style="color: var(--primary-dark);">Chi tiết bài làm</h3>
+        <button class="btn btn-secondary" onclick="closeDetailModal()">✖ Đóng</button>
+      </div>
+      <div id="modalBodyContent"></div>
+    </div>
+  </div>
+
+  <!-- Modal Nhập Mã Nộp Bài Mã Hóa Từ Học Sinh Ở Máy Khác -->
+  <div id="importTokenModal" class="modal-backdrop hidden">
+    <div class="modal-content" style="max-width: 620px;">
+      <div class="modal-header">
+        <h3 style="color: var(--primary-dark);">📥 Nhập Mã / Phiếu Nộp Bài Từ Học Sinh</h3>
+        <button class="btn btn-secondary" onclick="closeImportTokenModal()">✖ Đóng</button>
+      </div>
+      <div>
+        <p style="font-size: 0.9rem; color: #475569; margin-bottom: 0.75rem;">
+          Khi học sinh làm bài trên máy cá nhân (không kết nối chung máy chủ), học sinh chỉ nhìn thấy <strong>Mã Nộp Bài đã mã hóa</strong> (không biết điểm). Giáo viên dán mã hoặc chọn tệp <code>.txt</code> của học sinh vào đây để giải mã điểm & bài làm:
+        </p>
+        <div class="form-group">
+          <label>Cách 1: Dán Mã Nộp Bài (có thể dán nhiều mã, mỗi mã 1 dòng)</label>
+          <textarea id="pasteTokenTextarea" class="form-control" rows="4" style="font-family: monospace; font-size: 0.82rem;" placeholder="Dán mã bắt đầu bằng MT10-... vào đây"></textarea>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+          <label class="btn btn-secondary" style="cursor: pointer;">
+            📂 Cách 2: Chọn nhiều Phiếu Nộp Bài (.txt)
+            <input type="file" accept=".txt" multiple style="display: none;" onchange="handleImportReceiptFiles(event)" />
+          </label>
+          <button class="btn btn-primary" onclick="processPastedTokens()">
+            🔓 Giải Mã & Thêm Vào Bảng Điểm
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
