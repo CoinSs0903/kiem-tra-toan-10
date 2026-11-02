@@ -13,7 +13,8 @@ const STORAGE_KEYS = {
 let appSettings = {
   durationMinutes: 90,
   teacherPassword: 'giaovien123',
-  cloudRoomId: 'TOAN10_DE01_GV_ROOM_9871'
+  cloudRoomId: 'TOAN10_DE01_GV_ROOM_9871',
+  maxTabSwitches: 3
 };
 
 const SECRET_CIPHER_KEY = 'GV_TOAN10_SECRET_KEY_2026';
@@ -433,6 +434,10 @@ let timerInterval = null;
 let remainingSeconds = 90 * 60;
 let examStartTime = null;
 let isTeacherLoggedIn = false;
+let isExamInProgress = false;
+let tabSwitchCount = 0;
+let tabSwitchLogs = [];
+let lastViolationTimestamp = 0;
 
 // Khởi tạo khi tải trang
 window.addEventListener('DOMContentLoaded', () => {
@@ -440,7 +445,92 @@ window.addEventListener('DOMContentLoaded', () => {
   renderExamQuestions();
   renderTeacherSolutions();
   syncSubmissionsFromServer();
+  initAntiCheatMonitor();
 });
+
+// ============================================================================
+// HỆ THỐNG GIÁM SÁT CHỐNG GIAN LẬN (PHÁT HIỆN CHUYỂN TAB / RỜI CỬA SỔ THI)
+// ============================================================================
+function initAntiCheatMonitor() {
+  // 1. Phát hiện khi học sinh chuyển sang tab khác hoặc thu nhỏ trình duyệt
+  document.addEventListener('visibilitychange', () => {
+    if (isExamInProgress && document.hidden) {
+      recordTabSwitchViolation('Chuyển sang tab khác hoặc ẩn trình duyệt');
+    }
+  });
+
+  // 2. Phát hiện khi học sinh bấm ra ngoài cửa sổ trình duyệt (mở Zalo, ứng dụng khác, chia đôi màn hình)
+  window.addEventListener('blur', () => {
+    if (isExamInProgress) {
+      recordTabSwitchViolation('Rời khỏi cửa sổ làm bài (mở ứng dụng/cửa sổ khác)');
+    }
+  });
+}
+
+function recordTabSwitchViolation(reason) {
+  if (!isExamInProgress) return;
+  const nowMs = Date.now();
+  // Chống đếm trùng khi visibilitychange và blur kích hoạt cùng lúc trong 1.2 giây
+  if (nowMs - lastViolationTimestamp < 1200) return;
+  lastViolationTimestamp = nowMs;
+
+  tabSwitchCount++;
+  const timeStr = new Date().toLocaleTimeString('vi-VN');
+  tabSwitchLogs.push(`${timeStr} - Lần ${tabSwitchCount}: ${reason}`);
+
+  updateTabSwitchUI();
+
+  const maxAllowed = Number(appSettings.maxTabSwitches) || 0;
+  if (maxAllowed > 0 && tabSwitchCount >= maxAllowed) {
+    closeTabWarningModal();
+    alert(`🚨 VI PHẠM QUY CHẾ THI!\nEm đã chuyển tab / rời khỏi màn hình làm bài ${tabSwitchCount}/${maxAllowed} lần (vượt quá giới hạn cho phép).\nHệ thống sẽ TỰ ĐỘNG THU BÀI và báo cáo cho Giáo viên!`);
+    submitExamNow(true);
+    return;
+  }
+
+  const msgEl = document.getElementById('tabWarningMessage');
+  if (msgEl) {
+    const limitText = maxAllowed > 0
+      ? `Giới hạn tối đa: <strong>${tabSwitchCount} / ${maxAllowed} lần</strong>. Nếu chạm mức ${maxAllowed} lần, hệ thống sẽ <strong>tự động thu bài ngay lập tức</strong>!`
+      : `Tổng số lần vi phạm hiện tại: <strong>${tabSwitchCount} lần</strong>.`;
+    msgEl.innerHTML = `
+      Hệ thống phát hiện em vừa <strong>chuyển tab hoặc rời khỏi màn hình làm bài</strong> lúc <strong>${timeStr}</strong>.<br/><br/>
+      ${limitText}<br/>
+      <span style="color:#dc2626; font-size:0.88rem;">* Mọi hành vi chuyển tab đều đã được ghi vào nhật ký gửi cho Giáo viên!</span>
+    `;
+  }
+  document.getElementById('tabWarningModal')?.classList.remove('hidden');
+}
+
+function updateTabSwitchUI() {
+  const countEl = document.getElementById('tabSwitchCountDisplay');
+  const maxEl = document.getElementById('tabSwitchMaxDisplay');
+  const boxEl = document.getElementById('tabSwitchCounterBox');
+  const maxAllowed = Number(appSettings.maxTabSwitches) || 0;
+
+  if (countEl) countEl.textContent = tabSwitchCount;
+  if (maxEl) maxEl.textContent = maxAllowed > 0 ? maxAllowed : '∞';
+
+  if (boxEl) {
+    if (tabSwitchCount === 0) {
+      boxEl.style.background = '#f0fdf4';
+      boxEl.style.borderColor = '#86efac';
+      boxEl.style.color = '#166534';
+    } else if (maxAllowed > 0 && tabSwitchCount >= maxAllowed - 1) {
+      boxEl.style.background = '#fef2f2';
+      boxEl.style.borderColor = '#fca5a5';
+      boxEl.style.color = '#dc2626';
+    } else {
+      boxEl.style.background = '#fffbeb';
+      boxEl.style.borderColor = '#fcd34d';
+      boxEl.style.color = '#b45309';
+    }
+  }
+}
+
+function closeTabWarningModal() {
+  document.getElementById('tabWarningModal')?.classList.add('hidden');
+}
 
 function renderMathIn(element) {
   if (window.renderMathInElement) {
@@ -500,18 +590,26 @@ function loadSettings() {
     }
   } catch (e) {}
   document.getElementById('examDurationDisplay').textContent = appSettings.durationMinutes;
+  const maxNotice = document.getElementById('maxTabSwitchNotice');
+  if (maxNotice) maxNotice.textContent = appSettings.maxTabSwitches ?? 3;
   const durInput = document.getElementById('settingDuration');
   if (durInput) durInput.value = appSettings.durationMinutes;
+  const maxTabInput = document.getElementById('settingMaxTabSwitches');
+  if (maxTabInput) maxTabInput.value = appSettings.maxTabSwitches ?? 3;
   const cloudInput = document.getElementById('settingCloudRoom');
   if (cloudInput) cloudInput.value = appSettings.cloudRoomId || 'TOAN10_DE01_GV_ROOM_9871';
 }
 
 function saveSettings() {
   const newDur = parseInt(document.getElementById('settingDuration').value, 10);
+  const newMaxTabs = parseInt(document.getElementById('settingMaxTabSwitches')?.value, 10);
   const newPass = document.getElementById('settingNewPass').value.trim();
   const newCloud = (document.getElementById('settingCloudRoom')?.value || '').trim();
   if (newDur && newDur >= 5) {
     appSettings.durationMinutes = newDur;
+  }
+  if (!isNaN(newMaxTabs) && newMaxTabs >= 0) {
+    appSettings.maxTabSwitches = newMaxTabs;
   }
   if (newCloud.length > 0) {
     appSettings.cloudRoomId = newCloud.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -522,6 +620,8 @@ function saveSettings() {
   }
   localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(appSettings));
   document.getElementById('examDurationDisplay').textContent = appSettings.durationMinutes;
+  const maxNotice = document.getElementById('maxTabSwitchNotice');
+  if (maxNotice) maxNotice.textContent = appSettings.maxTabSwitches;
   alert('Đã lưu cài đặt thành công!');
 }
 
@@ -893,10 +993,15 @@ function startExam(e) {
   studentAnswers = {};
   examStartTime = new Date();
   remainingSeconds = appSettings.durationMinutes * 60;
+  isExamInProgress = true;
+  tabSwitchCount = 0;
+  tabSwitchLogs = [];
+  lastViolationTimestamp = 0;
 
   document.getElementById('displayStName').textContent = name;
   document.getElementById('displayStClass').textContent = stClass;
   document.getElementById('displayStCode').textContent = code;
+  updateTabSwitchUI();
 
   // Reset form inputs inside exam
   renderExamQuestions();
@@ -1000,7 +1105,9 @@ function gradeSubmission(answers) {
   };
 }
 
-function submitExamNow() {
+function submitExamNow(forcedByAntiCheat = false) {
+  isExamInProgress = false;
+  closeTabWarningModal();
   if (timerInterval) clearInterval(timerInterval);
   const now = new Date();
   const timeSpentSec = Math.max(1, Math.round((now - examStartTime) / 1000));
@@ -1020,6 +1127,9 @@ function submitExamNow() {
     durationText,
     answers: JSON.parse(JSON.stringify(studentAnswers)),
     scores,
+    tabSwitchCount,
+    tabSwitchLogs: [...tabSwitchLogs],
+    forcedByAntiCheat: Boolean(forcedByAntiCheat),
     teacherNote: ''
   };
 
@@ -1237,7 +1347,7 @@ function renderSubmissionsTable() {
   if (filtered.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="11" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+        <td colspan="12" style="text-align: center; padding: 2rem; color: var(--text-muted);">
           Chưa có bài nộp nào của học sinh.
         </td>
       </tr>
@@ -1245,25 +1355,36 @@ function renderSubmissionsTable() {
     return;
   }
 
-  tbody.innerHTML = filtered.map((item, idx) => `
-    <tr>
-      <td>${idx + 1}</td>
-      <td><strong>${escapeHtml(item.studentName)}</strong></td>
-      <td>${escapeHtml(item.studentClass)}</td>
-      <td>${escapeHtml(item.studentCode)}</td>
-      <td>${item.scores.scoreP1.toFixed(2)}</td>
-      <td>${item.scores.scoreP2.toFixed(2)}</td>
-      <td>${item.scores.scoreP3.toFixed(2)}</td>
-      <td>${item.scores.scoreP4.toFixed(2)}</td>
-      <td><span class="badge-score">${item.scores.totalScore.toFixed(2)} / 10</span></td>
-      <td style="font-size:0.84rem;">${item.submittedAt}<br/><span style="color:#64748b;">(${item.durationText})</span></td>
-      <td>
-        <button class="btn btn-primary" style="padding: 0.35rem 0.7rem; font-size: 0.82rem;" onclick="openSubmissionDetail('${item.id}')">
-          👁 Xem & Chấm
-        </button>
-      </td>
-    </tr>
-  `).join('');
+  tbody.innerHTML = filtered.map((item, idx) => {
+    const vCount = Number(item.tabSwitchCount) || 0;
+    let monitorBadge = `<span style="background:#dcfce7; color:#166534; padding:0.2rem 0.55rem; border-radius:999px; font-weight:700; font-size:0.8rem;">✅ 0 lần</span>`;
+    if (item.forcedByAntiCheat) {
+      monitorBadge = `<span style="background:#fee2e2; color:#b91c1c; padding:0.2rem 0.55rem; border-radius:999px; font-weight:700; font-size:0.8rem;">🚨 Thu bài (${vCount} lần)</span>`;
+    } else if (vCount > 0) {
+      monitorBadge = `<span style="background:#fef3c7; color:#b45309; padding:0.2rem 0.55rem; border-radius:999px; font-weight:700; font-size:0.8rem;">⚠️ Rời tab ${vCount} lần</span>`;
+    }
+
+    return `
+      <tr>
+        <td>${idx + 1}</td>
+        <td><strong>${escapeHtml(item.studentName)}</strong></td>
+        <td>${escapeHtml(item.studentClass)}</td>
+        <td>${escapeHtml(item.studentCode)}</td>
+        <td>${item.scores.scoreP1.toFixed(2)}</td>
+        <td>${item.scores.scoreP2.toFixed(2)}</td>
+        <td>${item.scores.scoreP3.toFixed(2)}</td>
+        <td>${item.scores.scoreP4.toFixed(2)}</td>
+        <td><span class="badge-score">${item.scores.totalScore.toFixed(2)} / 10</span></td>
+        <td>${monitorBadge}</td>
+        <td style="font-size:0.84rem;">${item.submittedAt}<br/><span style="color:#64748b;">(${item.durationText})</span></td>
+        <td>
+          <button class="btn btn-primary" style="padding: 0.35rem 0.7rem; font-size: 0.82rem;" onclick="openSubmissionDetail('${item.id}')">
+            👁 Xem & Chấm
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
 // ============================================================================
@@ -1277,6 +1398,9 @@ function openSubmissionDetail(subId) {
   document.getElementById('modalStudentTitle').innerHTML =
     `Bài làm: ${escapeHtml(sub.studentName)} (${escapeHtml(sub.studentClass)}) — Tổng điểm: <span style="color:var(--accent)">${sub.scores.totalScore.toFixed(2)}/10</span>`;
 
+  const vCount = Number(sub.tabSwitchCount) || 0;
+  const vLogs = Array.isArray(sub.tabSwitchLogs) ? sub.tabSwitchLogs : [];
+
   let html = `
     <div style="background:#f8fafc; padding:1rem; border-radius:8px; margin-bottom:1rem; border:1px solid #e2e8f0; display:flex; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
       <div><strong>Thời điểm nộp:</strong> ${sub.submittedAt} (${sub.durationText})</div>
@@ -1284,6 +1408,16 @@ function openSubmissionDetail(subId) {
         <strong>Điểm thành phần:</strong>
         Phần I: ${sub.scores.scoreP1}đ | Phần II: ${sub.scores.scoreP2}đ | Phần III: ${sub.scores.scoreP3}đ | Phần IV: ${sub.scores.scoreP4}đ
       </div>
+    </div>
+
+    <div style="background:${vCount > 0 ? '#fef2f2' : '#f0fdf4'}; border:1px solid ${vCount > 0 ? '#fca5a5' : '#86efac'}; padding:0.85rem 1rem; border-radius:8px; margin-bottom:1rem; font-size:0.9rem;">
+      <div style="font-weight:700; color:${vCount > 0 ? '#b91c1c' : '#166534'};">
+        🛡 Giám sát quy chế thi (Chuyển tab / Rời màn hình): ${vCount} lần ${sub.forcedByAntiCheat ? '— ĐÃ BỊ TỰ ĐỘNG THU BÀI DO VƯỢT QUÁ GIỚI HẠN' : ''}
+      </div>
+      ${vLogs.length > 0
+        ? `<ul style="margin:0.4rem 0 0 1.2rem; color:#7f1d1d; font-size:0.85rem;">${vLogs.map(l => `<li>${escapeHtml(l)}</li>`).join('')}</ul>`
+        : `<div style="color:#15803d; font-size:0.85rem; margin-top:0.2rem;">Học sinh làm bài nghiêm túc, không chuyển tab lần nào.</div>`
+      }
     </div>
   `;
 
@@ -1474,7 +1608,7 @@ function exportCSV() {
     alert('Chưa có dữ liệu điểm để xuất!');
     return;
   }
-  const headers = ['STT', 'Họ và tên', 'Lớp', 'SBD', 'Phần I (3đ)', 'Phần II (4đ)', 'Phần III (2đ)', 'Phần IV (1đ)', 'Tổng Điểm (10đ)', 'Thời gian nộp', 'Thời gian làm'];
+  const headers = ['STT', 'Họ và tên', 'Lớp', 'SBD', 'Phần I (3đ)', 'Phần II (4đ)', 'Phần III (2đ)', 'Phần IV (1đ)', 'Tổng Điểm (10đ)', 'Số lần chuyển tab', 'Thời gian nộp', 'Thời gian làm'];
   const rows = list.map((item, idx) => [
     idx + 1,
     `"${item.studentName.replace(/"/g, '""')}"`,
@@ -1485,6 +1619,7 @@ function exportCSV() {
     item.scores.scoreP3,
     item.scores.scoreP4,
     item.scores.totalScore,
+    item.tabSwitchCount || 0,
     `"${item.submittedAt}"`,
     `"${item.durationText}"`
   ]);
